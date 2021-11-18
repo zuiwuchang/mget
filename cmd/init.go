@@ -16,7 +16,7 @@ const (
 var v bool
 var rootCmd = &cobra.Command{
 	Use:   App,
-	Short: `generate tools create full`,
+	Short: `http multithreaded download tool`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if v {
 			fmt.Println(version.Platform)
