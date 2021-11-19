@@ -80,7 +80,7 @@ else
 fi
 cd "$Dir/bin"
 args=(
-    ./"$Target" get -u http://127.0.0.1/tools/webpc.exe -y
+    ./"$Target" get -u http://127.0.0.1/tools/webpc.exe -y -H '"abc: 1"' -H '"abc: 2"' -H '"def: 456"' -c "c0" -c "c1"
 )
 exec="${args[@]}"
 echo $exec
