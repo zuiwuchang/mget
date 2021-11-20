@@ -2,7 +2,8 @@ package get
 
 import (
 	"context"
-	"fmt"
+
+	"github.com/zuiwuchang/mget/cmd/internal/log"
 )
 
 type WorkerRely interface {
@@ -45,5 +46,5 @@ func (w *Worker) delete() {
 	w.rely.deleteWorker(w)
 }
 func (w *Worker) serve(t *Task) {
-	defaultLog.Push(`info`, fmt.Sprint(t))
+	log.Info(t)
 }

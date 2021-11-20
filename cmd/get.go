@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zuiwuchang/mget/cmd/internal/get"
+	"github.com/zuiwuchang/mget/cmd/internal/metadata"
 )
 
 func init() {
@@ -30,7 +31,7 @@ func init() {
 		Example: `mget get -u http://127.0.0.1/tools/source.exe
 mget get -u http://127.0.0.1/tools/source.exe -o a.exe`,
 		Run: func(cmd *cobra.Command, args []string) {
-			conf, e := get.NewConfigure(url, output, proxy,
+			conf, e := metadata.NewConfigure(url, output, proxy,
 				agent, head, headers, cookies, insecure,
 				worker, blockStr,
 			)
@@ -74,7 +75,7 @@ mget get -u http://127.0.0.1/tools/source.exe -o a.exe`,
 	flags.StringVarP(&agent,
 		`agent`, `a`,
 		``,
-		`http header User-Agent (default `+get.UserAgent+`)`,
+		`http header User-Agent (default `+metadata.UserAgent+`)`,
 	)
 	flags.StringSliceVarP(&cookies,
 		`cookie`, `c`,

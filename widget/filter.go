@@ -1,8 +1,6 @@
-package get
+package widget
 
 import (
-	"time"
-
 	"github.com/jroimartin/gocui"
 )
 
@@ -24,10 +22,11 @@ func (filter *Filter) Close() {
 	close(filter.close)
 }
 func (filter *Filter) Serve() {
+	ch := make(chan int)
 	for {
 		select {
 		case f := <-filter.ch:
-			if filter.send(f) {
+			if filter.send(ch, f) {
 				return
 			}
 		case <-filter.close:
@@ -35,32 +34,20 @@ func (filter *Filter) Serve() {
 		}
 	}
 }
-func (filter *Filter) send(f func(*gocui.Gui) error) (closed bool) {
-	var (
-		t        *time.Timer
-		duration = time.Millisecond * 100
-	)
-
-	for {
-		if t == nil {
-			t = time.NewTimer(duration)
-		} else {
-			t.Reset(duration)
-		}
-
+func (filter *Filter) send(ch chan int, f func(*gocui.Gui) error) (closed bool) {
+	filter.g.Update(func(g *gocui.Gui) error {
 		select {
-		case <-t.C:
-			filter.g.Update(f)
-			return
+		case ch <- 1:
 		case <-filter.close:
-			closed = true
-			return
-		case f = <-filter.ch:
-			if !t.Stop() {
-				<-t.C
-			}
 		}
+		return f(g)
+	})
+	select {
+	case <-ch:
+	case <-filter.close:
+		closed = true
 	}
+	return
 }
 func (filter *Filter) Update(f func(*gocui.Gui) error) {
 	for {

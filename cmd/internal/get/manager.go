@@ -3,9 +3,13 @@ package get
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/jroimartin/gocui"
+	"github.com/zuiwuchang/mget/cmd/internal/log"
+	"github.com/zuiwuchang/mget/cmd/internal/metadata"
+	"github.com/zuiwuchang/mget/cmd/internal/view"
 	"github.com/zuiwuchang/mget/utils"
 )
 
@@ -17,20 +21,21 @@ type Task struct {
 type Manager struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
-	conf    *Configure
-	status  Status
+	conf    *metadata.Configure
+	status  metadata.Status
 	m       sync.Mutex
-	gui     *GUI
+	view    *view.View
 	workers int
 	ch      chan *Task
 	ready   []*Worker
 	wait    sync.WaitGroup
 
-	filterStatus *Filter
-	statusSize   utils.Size
+	statusSize     utils.Size
+	statusDownload utils.Size
+	statusSteps    int64
 }
 
-func NewManager(ctx context.Context, conf *Configure) *Manager {
+func NewManager(ctx context.Context, conf *metadata.Configure) *Manager {
 	ctx, cancel := context.WithCancel(ctx)
 	return &Manager{
 		ctx:    ctx,
@@ -39,44 +44,35 @@ func NewManager(ctx context.Context, conf *Configure) *Manager {
 		ch:     make(chan *Task),
 	}
 }
+func (m *Manager) ConfigureView() string {
+	return strings.TrimRight(m.conf.String(), "\n")
+}
 func (m *Manager) Serve() (e error) {
-	gui := NewGUI(m.conf, m)
+	v := view.New(m)
 	if e != nil {
 		return
 	}
-	m.gui = gui
+	m.view = v
 
-	e = gui.Init()
-	if gui.g != nil {
-		defer gui.g.Close()
-	}
+	e = v.Init()
 	if e == nil {
+		defer v.Close()
 		e = m.init()
 		if e == nil {
 			m.postStatus(true)
-			e = gui.g.MainLoop()
+			e = v.MainLoop()
 		}
 	}
 	m.cancel()
-	if m.status == StatusSuccess {
+	if m.status == metadata.StatusSuccess {
 		e = nil
-	}
-	if m.filterStatus != nil {
-		m.filterStatus.Close()
 	}
 	m.wait.Wait()
 	return
 }
 func (m *Manager) init() (e error) {
-	m.filterStatus = NewFilter(m.gui.g)
-	m.wait.Add(1)
-	go func() {
-		defer m.wait.Done()
-		m.filterStatus.Serve()
-	}()
-
-	m.status = StatusInit
-	defaultLog.Push(`info`, `Status: %s`, m.status)
+	m.status = metadata.StatusInit
+	log.Info(`Status: `, m.status)
 	m.workers = m.conf.Worker
 	for i := 0; i < m.workers; i++ {
 		m.createWorker()
@@ -90,20 +86,24 @@ func (m *Manager) init() (e error) {
 	return
 }
 func (m *Manager) postStatus(safe bool) {
+	if m.view == nil {
+		return
+	}
 	if !safe {
 		m.m.Lock()
 		defer m.m.Unlock()
 	}
 
-	steps := ``
+	md := ``
+	if m.statusSteps != 0 {
+		md += fmt.Sprintf(` steps: %v`, m.statusSteps)
+	}
+	if m.statusSize != 0 {
+		md += fmt.Sprintf(` download: %s/%s`, m.statusDownload, m.statusSize)
+	}
 
-	body := fmt.Sprintf(`status: %s expect: %v ready: %v%s`, m.status, m.workers, len(m.ready), steps)
-	m.filterStatus.Update(func(g *gocui.Gui) error {
-		if m.gui != nil && m.gui.viewStatus != nil {
-			m.gui.viewStatus.SetBody(body)
-		}
-		return nil
-	})
+	body := fmt.Sprintf(`status: %s worker: %v/%v%s`, m.status, m.workers, len(m.ready), md)
+	m.view.SetStatus(body)
 }
 func (m *Manager) createWorker() {
 	w := NewWorker(m)
@@ -134,9 +134,9 @@ func (m *Manager) deleteWorker(worker *Worker) {
 func (m *Manager) Increase() {
 	m.m.Lock()
 	defer m.m.Unlock()
-	if m.status > StatusError {
+	if m.status > metadata.StatusError {
 		return
-	} else if m.workers == MaxWorkers {
+	} else if m.workers == metadata.MaxWorkers {
 		return
 	}
 
@@ -147,7 +147,7 @@ func (m *Manager) Increase() {
 func (m *Manager) Reduce() {
 	m.m.Lock()
 	defer m.m.Unlock()
-	if m.status > StatusError {
+	if m.status > metadata.StatusError {
 		return
 	} else if m.workers == 1 {
 		return
@@ -169,13 +169,19 @@ func (m *Manager) produce() {
 		return
 	}
 	m.statusSize = utils.Size(size)
-	defaultLog.Push(`info`, `Metadata: size=%s modified=%s`, modified, m.statusSize)
+	var block int64 = int64(m.conf.Block)
+	m.statusSteps = (size + block - 1) / block
+	log.Infof(`Metadata: size=%s steps=%v modified=%s`, m.statusSize, m.statusSteps, modified)
+	m.postStatus(false)
+
+	// db.OpenDB(m.conf.Output)
+	log.Info(`open db 123`)
 }
 func (m *Manager) exitWithError(e error) {
 	m.m.Lock()
-	if m.status < StatusError {
-		m.status = StatusError
-		m.gui.g.Update(func(g *gocui.Gui) error {
+	if m.status < metadata.StatusError {
+		m.status = metadata.StatusError
+		m.view.Update(func(g *gocui.Gui) error {
 			return e
 		})
 	}

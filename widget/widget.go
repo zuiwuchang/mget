@@ -52,6 +52,9 @@ func NewWidget(gui *gocui.Gui, name, body string, layout Layout) (widget *Widget
 func (w *Widget) View() *gocui.View {
 	return w.view
 }
+func (w *Widget) GUI() *gocui.Gui {
+	return w.gui
+}
 func (w *Widget) Layout() (e error) {
 	x, y, with, height := w.layout.Rect()
 	v, e := w.gui.SetView(w.name, x, y, x+with, y+height)
@@ -65,11 +68,15 @@ func (w *Widget) Layout() (e error) {
 	fmt.Fprintf(v, w.body)
 	return
 }
+
 func (w *Widget) SetBody(text string) {
 	w.gui.Update(func(g *gocui.Gui) error {
 		w.body = text
 		return nil
 	})
+}
+func (w *Widget) UnsafeSetBody(text string) {
+	w.body = text
 }
 func (w *Widget) SetBodyAndScroll(text string, bottom bool) {
 	w.gui.Update(func(g *gocui.Gui) error {

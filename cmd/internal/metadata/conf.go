@@ -1,4 +1,4 @@
-package get
+package metadata
 
 import (
 	"bytes"
@@ -10,6 +10,8 @@ import (
 	"net/textproto"
 	net_url "net/url"
 	"os"
+	"path"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -43,9 +45,24 @@ func NewConfigure(url, output, proxy string,
 	agent string, head bool, headers, cookies []string, insecure bool,
 	worker int, blockStr string,
 ) (conf *Configure, e error) {
-	_, e = net_url.ParseRequestURI(url)
+	u, e := net_url.ParseRequestURI(url)
 	if e != nil {
 		return
+	}
+	if output == `` {
+		output = path.Base(path.Clean(u.Path))
+	}
+	if output == `` || output == `/` || output == `.` || output == `..` {
+		e = errors.New(`not supported output`)
+		return
+	}
+	if filepath.IsAbs(output) {
+		output = filepath.Clean(output)
+	} else {
+		output, e = filepath.Abs(output)
+		if e != nil {
+			return
+		}
 	}
 	if proxy != `` {
 		var p *net_url.URL
@@ -243,7 +260,6 @@ func (c *Configure) GetMetadata(ctx context.Context) (modified string, size int6
 		return
 	}
 	defer resp.Body.Close()
-	// Content-Length: 15471938
 	if resp.Header.Get(`Accept-Ranges`) != `bytes` {
 		e = errors.New(`server not supported: Accept-Ranges`)
 		return
