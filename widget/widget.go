@@ -3,6 +3,7 @@ package widget
 import (
 	"errors"
 	"fmt"
+	"runtime"
 
 	"github.com/jroimartin/gocui"
 )
@@ -13,7 +14,7 @@ type Widget struct {
 	body   string
 	layout Layout
 	view   *gocui.View
-
+	filter *Filter
 	scroll bool
 }
 
@@ -39,14 +40,19 @@ func NewWidget(gui *gocui.Gui, name, body string, layout Layout) (widget *Widget
 		}
 		e = nil
 	}
-
+	filter := NewFilter(gui)
 	widget = &Widget{
 		gui:    gui,
 		name:   name,
 		body:   body,
 		layout: layout,
 		view:   view,
+		filter: filter,
 	}
+	go filter.Serve()
+	runtime.SetFinalizer(widget, func(w *Widget) {
+		w.filter.Close()
+	})
 	return
 }
 func (w *Widget) View() *gocui.View {
@@ -70,16 +76,14 @@ func (w *Widget) Layout() (e error) {
 }
 
 func (w *Widget) SetBody(text string) {
-	w.gui.Update(func(g *gocui.Gui) error {
+	w.filter.Update(func(g *gocui.Gui) error {
 		w.body = text
 		return nil
 	})
 }
-func (w *Widget) UnsafeSetBody(text string) {
-	w.body = text
-}
+
 func (w *Widget) SetBodyAndScroll(text string, bottom bool) {
-	w.gui.Update(func(g *gocui.Gui) error {
+	w.filter.Update(func(g *gocui.Gui) error {
 		w.body = text
 		if bottom {
 			w.ScrollBottom()

@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jroimartin/gocui"
 	"github.com/zuiwuchang/mget/widget"
 )
 
@@ -17,7 +16,6 @@ type Log struct {
 	offset, size int
 	body         string
 	m            sync.Mutex
-	filter       *widget.Filter
 }
 
 func NewLog(size int) *Log {
@@ -63,23 +61,9 @@ func (l *Log) Tag(tag string, a ...interface{}) {
 	}
 	str = time.Now().Format(`2006/01/02 15:04:05`) + ` [` + tag + `] ` + str
 	l.push(str)
-	l.post(l.body)
-}
-func (l *Log) post(body string) {
-	w := l.widget
-	if w == nil {
-		return
+	if l.widget != nil {
+		l.widget.SetBodyAndScroll(l.body, true)
 	}
-	if l.filter == nil {
-		l.filter = widget.NewFilter(l.widget.GUI())
-		go l.filter.Serve()
-	}
-
-	l.filter.Update(func(g *gocui.Gui) error {
-		w.UnsafeSetBody(body)
-		w.ScrollBottom()
-		return nil
-	})
 }
 func (l *Log) Tagf(tag, format string, a ...interface{}) {
 	l.m.Lock()
@@ -89,7 +73,9 @@ func (l *Log) Tagf(tag, format string, a ...interface{}) {
 	}
 	str := time.Now().Format(`2006/01/02 15:04:05`) + ` [` + tag + `] ` + format
 	l.push(str)
-	l.post(l.body)
+	if l.widget != nil {
+		l.widget.SetBodyAndScroll(l.body, true)
+	}
 }
 func (l *Log) Errorf(format string, a ...interface{}) {
 	l.Tagf(`error`, format, a...)

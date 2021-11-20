@@ -37,8 +37,6 @@ type View struct {
 	viewStatus *widget.Widget
 	viewWorker *widget.Widget
 	viewMenu   *widget.Widget
-
-	filterStatus *widget.Filter
 }
 
 func New(rely Rely) *View {
@@ -55,11 +53,7 @@ func (v *View) Init() (e error) {
 	defer func() {
 		if e != nil {
 			g.Close()
-			return
 		}
-
-		v.filterStatus = widget.NewFilter(v.g)
-		go v.filterStatus.Serve()
 	}()
 	v.g = g
 	g.Highlight = true

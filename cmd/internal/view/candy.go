@@ -3,7 +3,6 @@ package view
 import "github.com/jroimartin/gocui"
 
 func (v *View) Close() {
-	v.filterStatus.Close()
 	v.g.Close()
 }
 func (v *View) MainLoop() error {
@@ -15,8 +14,7 @@ func (v *View) Update(f func(g *gocui.Gui) error) {
 	}
 }
 func (v *View) SetStatus(body string) {
-	v.filterStatus.Update(func(g *gocui.Gui) error {
+	if v.viewStatus != nil {
 		v.viewStatus.SetBody(body)
-		return nil
-	})
+	}
 }
