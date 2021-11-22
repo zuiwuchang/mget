@@ -1,13 +1,18 @@
 package db
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/boltdb/bolt"
 )
 
-var db *DB
+var defaultDB *DB
+
+func DefaultDB() *DB {
+	return defaultDB
+}
 
 type DB struct {
 	*bolt.DB
@@ -22,12 +27,13 @@ func OpenDB(filename string) (result *DB, e error) {
 	}
 	d, e := bolt.Open(filename, 0600, &bolt.Options{Timeout: time.Second})
 	if e != nil {
+		e = fmt.Errorf(`open db %s-> %w`, filename, e)
 		return
 	}
-	db = &DB{
+	defaultDB = &DB{
 		DB:       d,
 		Filename: filename,
 	}
-	result = db
+	result = defaultDB
 	return
 }

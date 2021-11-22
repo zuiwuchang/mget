@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/jroimartin/gocui"
+	"github.com/zuiwuchang/mget/cmd/internal/db"
 	"github.com/zuiwuchang/mget/cmd/internal/log"
 	"github.com/zuiwuchang/mget/cmd/internal/metadata"
 	"github.com/zuiwuchang/mget/cmd/internal/view"
@@ -174,8 +175,12 @@ func (m *Manager) produce() {
 	log.Infof(`Metadata: size=%s steps=%v modified=%s`, m.statusSize, m.statusSteps, modified)
 	m.postStatus(false)
 
-	// db.OpenDB(m.conf.Output)
-	log.Info(`open db 123`)
+	db, e := db.OpenDB(m.conf.Output)
+	if e != nil {
+		m.exitWithError(e)
+		return
+	}
+	log.Info(`open db: `, db.Filename)
 }
 func (m *Manager) exitWithError(e error) {
 	m.m.Lock()

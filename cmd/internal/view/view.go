@@ -15,13 +15,22 @@ type Rely interface {
 }
 
 const (
-	ViewClose  = `close`
 	ViewConf   = `conf`
 	ViewStatus = `status`
 	ViewWorker = `worker`
 	ViewLog    = `log`
 	ViewMenu   = `menu`
 )
+
+var (
+	Views = []string{ViewConf,
+		ViewStatus,
+		ViewWorker,
+		ViewLog,
+		ViewMenu,
+	}
+)
+
 const (
 	MenuWidth    = 25
 	ConfHeight   = 5
@@ -31,12 +40,13 @@ const (
 )
 
 type View struct {
-	g          *gocui.Gui
-	rely       Rely
-	viewConf   *widget.Widget
-	viewStatus *widget.Widget
-	viewWorker *widget.Widget
-	viewMenu   *widget.Widget
+	g            *gocui.Gui
+	rely         Rely
+	viewConf     *widget.Widget
+	viewStatus   *widget.Widget
+	viewWorker   *widget.Widget
+	viewMenu     *widget.Widget
+	xMenu, yMenu int
 }
 
 func New(rely Rely) *View {
@@ -74,6 +84,8 @@ func (v *View) Init() (e error) {
 		return
 	} else if e = g.SetKeybinding(``, 's', gocui.ModNone, v.reduceWorker); e != nil {
 		return
+	} else if e = g.SetKeybinding(``, gocui.KeyTab, gocui.ModNone, v.tab); e != nil {
+		return
 	} else if e = g.SetKeybinding(``, gocui.MouseLeft, gocui.ModNone, v.current); e != nil {
 		return
 	}
@@ -105,9 +117,15 @@ l: toggle log display`,
 				return nil
 			}
 			view := v.viewMenu.View()
+			view.Highlight = true
 			view.Title = ViewMenu
+			view.SetCursor(v.xMenu, v.yMenu)
 			g.SetKeybinding(ViewMenu, gocui.MouseLeft, gocui.ModNone, v.clickMenu)
+			g.SetKeybinding(ViewMenu, gocui.KeyArrowUp, gocui.ModNone, v.upMenu)
+			g.SetKeybinding(ViewMenu, gocui.KeyArrowDown, gocui.ModNone, v.downMenu)
+			g.SetKeybinding(ViewMenu, gocui.KeyEnter, gocui.ModNone, v.enterMenu)
 		} else {
+			v.xMenu, v.yMenu = v.viewMenu.View().Cursor()
 			v.viewMenu.DeleteView()
 			v.viewMenu = nil
 		}
@@ -151,7 +169,42 @@ func (v *View) current(g *gocui.Gui, view *gocui.View) error {
 	}
 	return nil
 }
+func (v *View) getName(i int) (name string) {
+	for {
+		i = i % len(Views)
+		name = Views[i]
+		if name == ViewLog && !log.Display() {
+			i++
+			continue
+		} else if name == ViewMenu && v.viewMenu == nil {
+			i++
+			continue
+		}
+		break
+	}
+	return
+}
+func (v *View) tab(g *gocui.Gui, _ *gocui.View) error {
+	view := g.CurrentView()
+	var current string
+	if view == nil {
+		current = Views[0]
+	} else {
+		current = view.Name()
+		for i, name := range Views {
+			if current == name {
+				i++
+				current = v.getName(i)
+				break
+			}
+		}
+	}
 
+	if _, e := g.SetCurrentView(current); e != nil {
+		log.Errorf(`SetCurrentView %s: %v`, Views[0], e)
+	}
+	return nil
+}
 func (v *View) layout(g *gocui.Gui) (e error) {
 	if v.viewConf == nil {
 		v.viewConf, e = widget.NewWidget(g, ViewConf,
@@ -244,7 +297,32 @@ func (v *View) reduceWorker(g *gocui.Gui, _ *gocui.View) error {
 }
 
 func (v *View) clickMenu(g *gocui.Gui, view *gocui.View) error {
+	x, y := view.Cursor()
+	str, _ := view.Word(x, y)
+	if str == `` {
+		return nil
+	}
+	return v.doMenu(g, view, y)
+}
+func (v *View) upMenu(g *gocui.Gui, view *gocui.View) error {
+	x, y := view.Cursor()
+	if y > 0 {
+		view.SetCursor(x, y-1)
+	}
+	return nil
+}
+func (v *View) downMenu(g *gocui.Gui, view *gocui.View) error {
+	x, y := view.Cursor()
+	if y < 3 {
+		view.SetCursor(x, y+1)
+	}
+	return nil
+}
+func (v *View) enterMenu(g *gocui.Gui, view *gocui.View) error {
 	_, y := view.Cursor()
+	return v.doMenu(g, view, y)
+}
+func (v *View) doMenu(g *gocui.Gui, view *gocui.View, y int) error {
 	str, e := view.Line(y)
 	if e != nil || len(str) < 1 {
 		return nil
