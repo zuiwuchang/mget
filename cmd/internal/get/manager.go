@@ -14,22 +14,18 @@ import (
 	"github.com/zuiwuchang/mget/utils"
 )
 
-type Task struct {
-	ID     int
-	Offset int64
-	Num    int64
-}
 type Manager struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	conf    *metadata.Configure
-	status  metadata.Status
-	m       sync.Mutex
-	view    *view.View
-	workers int
-	ch      chan *Task
-	ready   []*Worker
-	wait    sync.WaitGroup
+	ctx      context.Context
+	cancel   context.CancelFunc
+	conf     *metadata.Configure
+	status   metadata.Status
+	m        sync.Mutex
+	view     *view.View
+	workers  int
+	ch       chan *db.Task
+	ready    []*Worker
+	workerID int64
+	wait     sync.WaitGroup
 
 	statusSize     utils.Size
 	statusDownload utils.Size
@@ -42,7 +38,7 @@ func NewManager(ctx context.Context, conf *metadata.Configure) *Manager {
 		ctx:    ctx,
 		cancel: cancel,
 		conf:   conf,
-		ch:     make(chan *Task),
+		ch:     make(chan *db.Task),
 	}
 }
 func (m *Manager) ConfigureView() string {
@@ -82,7 +78,9 @@ func (m *Manager) init() (e error) {
 	m.wait.Add(1)
 	go func() {
 		defer m.wait.Done()
-		m.produce()
+		if e := m.produce(); e != nil {
+			m.ExitWithError(e)
+		}
 	}()
 	return
 }
@@ -107,7 +105,8 @@ func (m *Manager) postStatus(safe bool) {
 	m.view.SetStatus(body)
 }
 func (m *Manager) createWorker() {
-	w := NewWorker(m)
+	m.workerID++
+	w := NewWorker(m.workerID, m)
 	m.wait.Add(1)
 	m.ready = append(m.ready, w)
 	go func() {
@@ -118,20 +117,10 @@ func (m *Manager) createWorker() {
 func (m *Manager) Context() context.Context {
 	return m.ctx
 }
-func (m *Manager) GetChannel() <-chan *Task {
+func (m *Manager) GetChannel() <-chan *db.Task {
 	return m.ch
 }
-func (m *Manager) deleteWorker(worker *Worker) {
-	m.m.Lock()
-	for i, w := range m.ready {
-		if w == worker {
-			m.ready = append(m.ready[:i], m.ready[i+1:]...)
-			break
-		}
-	}
-	m.postStatus(true)
-	m.m.Unlock()
-}
+
 func (m *Manager) Increase() {
 	m.m.Lock()
 	defer m.m.Unlock()
@@ -144,6 +133,7 @@ func (m *Manager) Increase() {
 	m.workers++
 	m.createWorker()
 	m.postStatus(true)
+	m.updateWorkerStatus()
 }
 func (m *Manager) Reduce() {
 	m.m.Lock()
@@ -162,27 +152,56 @@ func (m *Manager) Reduce() {
 		}
 	}()
 	m.postStatus(true)
+	m.updateWorkerStatus()
 }
-func (m *Manager) produce() {
+func (m *Manager) produce() (e error) {
 	modified, size, e := m.conf.GetMetadata(m.ctx)
 	if e != nil {
-		m.exitWithError(e)
 		return
 	}
 	m.statusSize = utils.Size(size)
 	var block int64 = int64(m.conf.Block)
-	m.statusSteps = (size + block - 1) / block
-	log.Infof(`Metadata: size=%s steps=%v modified=%s`, m.statusSize, m.statusSteps, modified)
+	steps := (size + block - 1) / block
+	m.statusSteps = steps
+	log.Infof(`Metadata: size=%s steps=%v modified=%s`, m.statusSize, steps, modified)
 	m.postStatus(false)
 
-	db, e := db.OpenDB(m.conf.Output)
+	d, e := db.OpenDB(m.conf.Output)
 	if e != nil {
-		m.exitWithError(e)
 		return
 	}
-	log.Info(`open db: `, db.Filename)
+	log.Info(`open db: `, d.Filename)
+	e = d.Load(m.statusSize, m.conf.Block, modified)
+	if e != nil {
+		return
+	}
+	m.status = metadata.StatusDownload
+	m.postStatus(false)
+
+	var (
+		offset, num, id int64
+	)
+	for offset < size {
+		id++
+		if offset+block > size {
+			num = size - offset
+		} else {
+			num = block
+		}
+		select {
+		case m.ch <- &db.Task{
+			ID:     id,
+			Offset: utils.Size(offset),
+			Num:    utils.Size(num),
+		}:
+		case <-m.ctx.Done():
+			return
+		}
+		offset += num
+	}
+	return
 }
-func (m *Manager) exitWithError(e error) {
+func (m *Manager) ExitWithError(e error) {
 	m.m.Lock()
 	if m.status < metadata.StatusError {
 		m.status = metadata.StatusError

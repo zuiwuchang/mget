@@ -47,6 +47,7 @@ type View struct {
 	viewWorker   *widget.Widget
 	viewMenu     *widget.Widget
 	xMenu, yMenu int
+	bodyWorker   string
 }
 
 func New(rely Rely) *View {
@@ -256,7 +257,7 @@ func (v *View) layout(g *gocui.Gui) (e error) {
 	}
 	if v.viewWorker == nil {
 		v.viewWorker, e = widget.NewWidget(g, ViewWorker,
-			``,
+			v.bodyWorker,
 			widget.NewLayout(func() (x int, y int, w int, h int) {
 				y = ConfHeight + 1 + StatusHeight + 1
 				w, h = g.Size()
