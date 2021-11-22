@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/zuiwuchang/mget/cmd/internal/log"
 	"github.com/zuiwuchang/mget/utils"
 	"github.com/zuiwuchang/mget/version"
 )
@@ -251,10 +252,16 @@ func (c *Configure) Do(req *http.Request) (resp *http.Response, e error) {
 	return http.DefaultClient.Do(req)
 }
 func (c *Configure) GetMetadata(ctx context.Context) (modified string, size int64, e error) {
-	req, e := c.NewRequestWithContext(ctx, http.MethodHead, c.URL, nil)
+	var req *http.Request
+	if c.Head {
+		req, e = c.NewRequestWithContext(ctx, http.MethodHead, c.URL, nil)
+	} else {
+		req, e = c.NewRequestWithContext(ctx, http.MethodGet, c.URL, nil)
+	}
 	if e != nil {
 		return
 	}
+	log.Info(req.Method, ` `, req.URL)
 	resp, e := c.Do(req)
 	if e != nil {
 		return

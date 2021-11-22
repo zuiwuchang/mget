@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -19,6 +20,11 @@ var (
 	BucketTask     = []byte(`Task`)
 )
 
+type Batch struct {
+	ID  int64
+	Val int64
+}
+
 func DefaultDB() *DB {
 	return defaultDB
 }
@@ -27,6 +33,7 @@ type DB struct {
 	*bolt.DB
 	Filename string
 	Temp     string
+	ch       chan Batch
 }
 
 func OpenDB(filename string) (result *DB, e error) {
@@ -38,6 +45,7 @@ func OpenDB(filename string) (result *DB, e error) {
 		temp = filename + `.tmp`
 		filename += ".db"
 	}
+	log.Trace(`open db: `, filename)
 	d, e := bolt.Open(filename, 0600, &bolt.Options{Timeout: time.Second})
 	if e != nil {
 		e = fmt.Errorf(`open db %s-> %w`, filename, e)
@@ -47,11 +55,14 @@ func OpenDB(filename string) (result *DB, e error) {
 		DB:       d,
 		Filename: filename,
 		Temp:     temp,
+		ch:       make(chan Batch, runtime.NumCPU()*4),
 	}
+	go defaultDB.batch()
 	result = defaultDB
 	return
 }
 func (d *DB) Load(size, block utils.Size, modified string) error {
+	log.Trace(`load db`)
 	return d.Update(func(t *bolt.Tx) (e error) {
 		var (
 			bucket = t.Bucket(BucketMetadata)
@@ -126,14 +137,42 @@ func (d *DB) GetSize(id int64) (size utils.Size, e error) {
 	return
 }
 func (d *DB) SetSize(id, size int64) (e error) {
-	e = d.Update(func(t *bolt.Tx) (e error) {
+	d.ch <- Batch{
+		ID:  id,
+		Val: size,
+	}
+	return
+}
+func (d *DB) batch() {
+	m := make(map[int64]int64)
+	for {
+		d.getBatch(m)
+		d.putBatch(m)
+	}
+}
+func (d *DB) putBatch(m map[int64]int64) {
+	d.Update(func(t *bolt.Tx) (e error) {
 		var (
 			bucket = t.Bucket(BucketTask)
-			key    = utils.Itob(id)
-			val    = utils.Itob(size)
 		)
-		e = bucket.Put(key, val)
+		for k, v := range m {
+			e = bucket.Put(utils.Itob(k), utils.Itob(v))
+			if e != nil {
+				break
+			}
+		}
 		return
 	})
-	return
+}
+func (d *DB) getBatch(m map[int64]int64) {
+	node := <-d.ch
+	m[node.ID] = node.Val
+	for {
+		select {
+		case node = <-d.ch:
+			m[node.ID] = node.Val
+		default:
+			return
+		}
+	}
 }

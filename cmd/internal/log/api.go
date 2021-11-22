@@ -1,6 +1,8 @@
 package log
 
-import "github.com/zuiwuchang/mget/widget"
+import (
+	"github.com/zuiwuchang/mget/widget"
+)
 
 func Layout() error {
 	return defaultLog.Layout()

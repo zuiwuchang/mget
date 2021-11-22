@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/zuiwuchang/mget/cmd/internal/db"
 	"github.com/zuiwuchang/mget/utils"
@@ -19,34 +20,35 @@ type Rely interface {
 	ExitWithError(e error)
 	WriteStatus(n int64, net bool)
 	Block() utils.Size
+	Finish() <-chan struct{}
 
 	GetRequest() (req *http.Request, e error)
 	Do(req *http.Request) (resp *http.Response, e error)
 }
 type Worker struct {
-	ID     int64
-	rely   Rely
-	ctx    context.Context
-	cancel context.CancelFunc
+	ID         int64
+	rely       Rely
+	statistics *utils.Statistics
 }
 
 func New(id int64, rely Rely) *Worker {
-	ctx, cancel := context.WithCancel(rely.Context())
 	return &Worker{
-		ID:     id,
-		ctx:    ctx,
-		cancel: cancel,
-		rely:   rely,
+		ID:         id,
+		rely:       rely,
+		statistics: utils.NewStatistics(time.Second * 5),
 	}
 }
 func (w *Worker) Serve() {
 	defer w.delete()
-	done := w.ctx.Done()
+	done := w.rely.Context().Done()
 	ch := w.rely.GetChannel()
+	finish := w.rely.Finish()
 	w.postIDLE()
 	for {
 		select {
 		case <-done:
+			return
+		case <-finish:
 			return
 		case t := <-ch:
 			if t == nil {
@@ -68,17 +70,29 @@ func (w *Worker) postIDLE() {
 	w.rely.WorkerStatus(w, fmt.Sprintf(`worker-%v: IDLE`, w.ID))
 }
 func (w *Worker) postStart(t *db.Task) {
-	w.rely.WorkerStatus(w, fmt.Sprintf(`worker-%v: Start id: %v offset: %s download: 0b/%s`,
+	w.rely.WorkerStatus(w, fmt.Sprintf(`worker-%v: Start step: %v offset: %s download: 0b/%s`,
 		w.ID,
 		t.ID,
 		t.Offset, t.Num,
 	))
 }
 func (w *Worker) postStatus(status string, t *db.Task, download utils.Size) {
-	w.rely.WorkerStatus(w, fmt.Sprintf(`worker-%v: %s id: %v offset: %s download: %s/%s`,
+	var md string
+	if download != 0 {
+		speed := w.statistics.Speed()
+		if speed != 0 {
+			md += fmt.Sprintf(` [%s/s]`, utils.Size(speed))
+			if download < t.Num {
+				duration := time.Second * time.Duration(t.Num-download) / time.Duration(speed)
+				md += fmt.Sprintf(` %s ETA`, duration)
+			}
+		}
+	}
+	w.rely.WorkerStatus(w, fmt.Sprintf(`worker-%v: %s step: %v offset: %s download: %s/%s%s`,
 		w.ID, status,
 		t.ID,
 		t.Offset, download, t.Num,
+		md,
 	))
 }
 func (w *Worker) serve(t *db.Task) (e error) {
@@ -154,7 +168,6 @@ type Writer struct {
 	f    *os.File
 	db   *db.DB
 	size int64
-	last int64
 }
 
 func (w *Writer) Write(p []byte) (n int, err error) {
@@ -164,6 +177,7 @@ func (w *Writer) Write(p []byte) (n int, err error) {
 		return
 	}
 	if n != 0 {
+		w.w.statistics.Push(int64(n))
 		w.size += int64(n)
 		err = w.setSize()
 		if err == nil {
@@ -182,22 +196,5 @@ func (w *Writer) update() {
 	}
 }
 func (w *Writer) setSize() (e error) {
-	if w.size == w.last {
-		return
-	}
-	size := utils.Size(w.size)
-	if size == w.t.Num {
-		e = w.db.SetSize(w.t.ID, w.size)
-		if e != nil {
-			return
-		}
-		w.last = w.size
-	} else if w.size >= w.last+utils.M {
-		w.db.SetSize(w.t.ID, w.size)
-		if e != nil {
-			return
-		}
-		w.last = w.size
-	}
-	return
+	return w.db.SetSize(w.t.ID, w.size)
 }

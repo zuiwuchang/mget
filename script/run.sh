@@ -79,10 +79,10 @@ else
     fi
 fi
 cd "$Dir/bin"
-URL='"https://cdimage.ubuntu.com/releases/20.04/release/ubuntu-20.04.3-live-server-arm64.iso"'
-# URL='"http://127.0.0.1/tools/webpc.exe"'
+# URL='"https://cdimage.ubuntu.com/releases/20.04/release/ubuntu-20.04.3-live-server-arm64.iso"'
+URL='"http://127.0.0.1/tools/webpc.exe"'
 args=(
-    ./"$Target" get -u $URL -y -H '"abc: 1"' -H '"abc: 2"' -H '"def: 456"' -c "c0" -c "c1" -w 6
+    ./"$Target" get -u $URL -y -H '"abc: 1"' -H '"abc: 2"' -H '"def: 456"' -c "c0" -c "c1" --head
 )
 exec="${args[@]}"
 echo $exec

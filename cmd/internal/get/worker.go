@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/zuiwuchang/mget/cmd/internal/get/worker"
+	"github.com/zuiwuchang/mget/cmd/internal/log"
 	"github.com/zuiwuchang/mget/utils"
 )
 
@@ -53,6 +54,9 @@ func (m *Manager) Block() utils.Size {
 func (m *Manager) WriteStatus(n int64, net bool) {
 	m.m.Lock()
 	m.statusDownload += utils.Size(n)
+	if net {
+		m.statistics.Push(n)
+	}
 	m.postStatus(true)
 	m.m.Unlock()
 }
@@ -61,4 +65,14 @@ func (m *Manager) GetRequest() (req *http.Request, e error) {
 }
 func (m *Manager) Do(req *http.Request) (resp *http.Response, e error) {
 	return m.conf.Do(req)
+}
+func (m *Manager) Finish() <-chan struct{} {
+	return m.finish
+}
+func (m *Manager) Debug() {
+	log.Info(`call lock`)
+	defer log.Info(`call unlock`)
+	m.m.Lock()
+	log.Info(`locked`)
+	m.m.Unlock()
 }

@@ -9,6 +9,7 @@ const (
 	StatusInit
 	StatusDownload
 	StatusError
+	StatusMerge
 	StatusSuccess
 )
 
@@ -22,6 +23,8 @@ func (s Status) String() string {
 		return `Download`
 	case StatusError:
 		return `Error`
+	case StatusMerge:
+		return `Merge`
 	case StatusSuccess:
 		return `Success`
 	}
