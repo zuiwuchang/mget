@@ -26,6 +26,7 @@ func init() {
 		blockStr      string
 		worker        int
 		yes, insecure bool
+		ascii         bool
 	)
 	cmd := &cobra.Command{
 		Use:   `get`,
@@ -40,6 +41,7 @@ mget get -u http://127.0.0.1/tools/source.exe -o a.exe`,
 			if e != nil {
 				log.Fatalln(e)
 			}
+			conf.ASCII = ascii
 			conf.Println()
 			if !yes {
 				val := readBool(bufio.NewReader(os.Stdin), `Are you sure you want to start downloading <y/n>`)
@@ -123,5 +125,11 @@ mget get -u http://127.0.0.1/tools/source.exe -o a.exe`,
 		false,
 		`allow insecure server connections when using SSL`,
 	)
+	flags.BoolVarP(&insecure,
+		`ASCII`, `A`,
+		false,
+		`if ASCII is true then use ASCII instead of unicode to draw the`,
+	)
+
 	rootCmd.AddCommand(cmd)
 }

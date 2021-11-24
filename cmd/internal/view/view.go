@@ -1,6 +1,7 @@
 package view
 
 import (
+	"runtime"
 	"strings"
 
 	"github.com/jroimartin/gocui"
@@ -12,6 +13,7 @@ type Rely interface {
 	Increase()
 	Reduce()
 	ConfigureView() string
+	ASCII() bool
 }
 
 const (
@@ -67,6 +69,9 @@ func (v *View) Init() (e error) {
 		}
 	}()
 	v.g = g
+	if runtime.GOOS == `windows` {
+		g.ASCII = true
+	}
 	g.Highlight = true
 	g.Cursor = true
 	g.SelFgColor = gocui.ColorGreen

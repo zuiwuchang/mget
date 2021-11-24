@@ -3,9 +3,11 @@ package metadata
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/textproto"
 	net_url "net/url"
@@ -20,6 +22,7 @@ import (
 	"github.com/zuiwuchang/mget/cmd/internal/log"
 	"github.com/zuiwuchang/mget/utils"
 	"github.com/zuiwuchang/mget/version"
+	"golang.org/x/net/proxy"
 )
 
 var (
@@ -40,6 +43,8 @@ type Configure struct {
 	Worker       int
 	Block        utils.Size
 	m            sync.Mutex
+	client       *http.Client
+	ASCII        bool
 }
 
 func NewConfigure(url, output, proxy string,
@@ -70,7 +75,7 @@ func NewConfigure(url, output, proxy string,
 		p, e = net_url.ParseRequestURI(proxy)
 		if e != nil {
 			return
-		} else if p.Scheme != `socks5` && p.Scheme != `http` {
+		} else if p.Scheme != `socks5` && p.Scheme != `http` && p.Scheme != `https` {
 			e = fmt.Errorf(`proxy only supported socks5 or http, not supported %s`, p.Scheme)
 			return
 		}
@@ -248,8 +253,12 @@ func (c *Configure) Println() {
 	c.WriteFormat(os.Stdout, `   `)
 	fmt.Println(`}`)
 }
-func (c *Configure) Do(req *http.Request) (resp *http.Response, e error) {
-	return http.DefaultClient.Do(req)
+func (c *Configure) Do(req *http.Request) (*http.Response, error) {
+	client, e := c.Client()
+	if e != nil {
+		return nil, e
+	}
+	return client.Do(req)
 }
 func (c *Configure) GetMetadata(ctx context.Context) (modified string, size int64, e error) {
 	var req *http.Request
@@ -320,5 +329,55 @@ func (c *Configure) Exists() (exists bool, e error) {
 		e = fmt.Errorf(`dir already exists: %s`, c.Output)
 		return
 	}
+	return
+}
+func (c *Configure) Client() (client *http.Client, e error) {
+	c.m.Lock()
+	defer c.m.Unlock()
+	if c.client != nil {
+		client = c.client
+		return
+	}
+	if c.Insecure {
+		client = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			},
+		}
+	} else if c.Proxy != `` {
+		var transport http.Transport
+		var p *net_url.URL
+		p, e = net_url.ParseRequestURI(c.Proxy)
+		if e != nil {
+			return
+		} else if p.Scheme == `http` || p.Scheme == `https` {
+			transport.Proxy = http.ProxyURL(p)
+		} else if p.Scheme == `socks5` {
+			var dialer proxy.Dialer
+			dialer, e = proxy.SOCKS5(`tcp`, p.Host, nil, proxy.Direct)
+			if e != nil {
+				return
+			}
+			transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return dialer.Dial(network, addr)
+			}
+		} else {
+			e = fmt.Errorf(`not supported proxy scheme: %v`, c.URL)
+			return
+		}
+		if c.Insecure {
+			transport.TLSClientConfig = &tls.Config{
+				InsecureSkipVerify: true,
+			}
+		}
+		client = &http.Client{
+			Transport: &transport,
+		}
+	} else {
+		client = http.DefaultClient
+	}
+	c.client = client
 	return
 }

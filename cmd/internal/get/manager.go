@@ -51,7 +51,9 @@ func NewManager(ctx context.Context, conf *metadata.Configure) *Manager {
 func (m *Manager) ConfigureView() string {
 	return strings.TrimRight(m.conf.String(), "\n")
 }
-
+func (m *Manager) ASCII() bool {
+	return m.conf.ASCII
+}
 func (m *Manager) Serve() (e error) {
 	v := view.New(m)
 	if e != nil {
