@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/zuiwuchang/mget/cmd/internal/get/worker"
-	"github.com/zuiwuchang/mget/cmd/internal/log"
 	"github.com/zuiwuchang/mget/utils"
 )
 
@@ -28,6 +27,7 @@ func (m *Manager) DeleteWorker(worker *worker.Worker) {
 		}
 	}
 	m.postStatus(true)
+	m.updateWorkerStatus()
 	m.m.Unlock()
 }
 func (m *Manager) WorkerStatus(worker *worker.Worker, status string) {
@@ -68,11 +68,4 @@ func (m *Manager) Do(req *http.Request) (resp *http.Response, e error) {
 }
 func (m *Manager) Finish() <-chan struct{} {
 	return m.finish
-}
-func (m *Manager) Debug() {
-	log.Info(`call lock`)
-	defer log.Info(`call unlock`)
-	m.m.Lock()
-	log.Info(`locked`)
-	m.m.Unlock()
 }

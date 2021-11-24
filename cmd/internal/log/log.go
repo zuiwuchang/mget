@@ -2,7 +2,6 @@ package log
 
 import (
 	"fmt"
-	"net"
 	"sync"
 	"time"
 
@@ -10,22 +9,6 @@ import (
 )
 
 var defaultLog = NewLog(100)
-var logWriter net.Conn
-
-func logStr(str string) {
-	if logWriter == nil {
-		var e error
-		logWriter, e = net.Dial(`tcp`, `127.0.0.1:7000`)
-		if e != nil {
-			return
-		}
-	}
-	_, e := logWriter.Write([]byte(str + "\n"))
-	if e != nil {
-		logWriter.Close()
-		logWriter = nil
-	}
-}
 
 type Log struct {
 	widget       *widget.Widget
@@ -77,7 +60,6 @@ func (l *Log) Tag(tag string, a ...interface{}) {
 		str = fmt.Sprint(a...)
 	}
 	str = time.Now().Format(`2006/01/02 15:04:05`) + ` [` + tag + `] ` + str
-	logStr(str)
 	l.push(str)
 	if l.widget != nil {
 		l.widget.SetBodyAndScroll(l.body, true)
@@ -90,7 +72,6 @@ func (l *Log) Tagf(tag, format string, a ...interface{}) {
 		format = fmt.Sprintf(format, a...)
 	}
 	str := time.Now().Format(`2006/01/02 15:04:05`) + ` [` + tag + `] ` + format
-	logStr(str)
 	l.push(str)
 	if l.widget != nil {
 		l.widget.SetBodyAndScroll(l.body, true)

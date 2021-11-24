@@ -61,6 +61,8 @@ func (filter *Filter) Update(f func(*gocui.Gui) error) {
 		select {
 		case <-filter.close:
 			return
+		case filter.ch <- f:
+			return
 		case <-filter.ch:
 		default:
 		}

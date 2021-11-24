@@ -39,7 +39,12 @@ func New(id int64, rely Rely) *Worker {
 	}
 }
 func (w *Worker) Serve() {
-	defer w.delete()
+	finished := false
+	defer func() {
+		if !finished {
+			w.delete()
+		}
+	}()
 	done := w.rely.Context().Done()
 	ch := w.rely.GetChannel()
 	finish := w.rely.Finish()
@@ -49,6 +54,7 @@ func (w *Worker) Serve() {
 		case <-done:
 			return
 		case <-finish:
+			finished = true
 			return
 		case t := <-ch:
 			if t == nil {

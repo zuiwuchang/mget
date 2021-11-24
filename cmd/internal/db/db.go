@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -33,17 +34,20 @@ type DB struct {
 	*bolt.DB
 	Filename string
 	Temp     string
+	Output   string
 	ch       chan Batch
+	close    chan struct{}
+	wait     sync.WaitGroup
 }
 
-func OpenDB(filename string) (result *DB, e error) {
-	var temp string
-	if strings.HasSuffix(filename, `.`) {
-		temp = filename + `tmp`
-		filename += "db"
+func OpenDB(output string) (result *DB, e error) {
+	var temp, filename string
+	if strings.HasSuffix(output, `.`) {
+		temp = output + `tmp`
+		filename = output + "db"
 	} else {
-		temp = filename + `.tmp`
-		filename += ".db"
+		temp = output + `.tmp`
+		filename = output + ".db"
 	}
 	log.Trace(`open db: `, filename)
 	d, e := bolt.Open(filename, 0600, &bolt.Options{Timeout: time.Second})
@@ -54,11 +58,25 @@ func OpenDB(filename string) (result *DB, e error) {
 	defaultDB = &DB{
 		DB:       d,
 		Filename: filename,
+		Output:   output,
 		Temp:     temp,
 		ch:       make(chan Batch, runtime.NumCPU()*4),
+		close:    make(chan struct{}),
 	}
+	defaultDB.wait.Add(1)
 	go defaultDB.batch()
 	result = defaultDB
+	return
+}
+func (d *DB) Finish() (e error) {
+	e = os.Rename(d.Temp, d.Output)
+	if e != nil {
+		return
+	}
+	close(d.close)
+	d.wait.Wait()
+	d.Close()
+	os.Remove(d.Filename)
 	return
 }
 func (d *DB) Load(size, block utils.Size, modified string) error {
@@ -144,10 +162,16 @@ func (d *DB) SetSize(id, size int64) (e error) {
 	return
 }
 func (d *DB) batch() {
+	defer d.wait.Done()
 	m := make(map[int64]int64)
 	for {
-		d.getBatch(m)
+		if d.getBatch(m) {
+			break
+		}
 		d.putBatch(m)
+		for k := range m {
+			delete(m, k)
+		}
 	}
 }
 func (d *DB) putBatch(m map[int64]int64) {
@@ -164,13 +188,23 @@ func (d *DB) putBatch(m map[int64]int64) {
 		return
 	})
 }
-func (d *DB) getBatch(m map[int64]int64) {
-	node := <-d.ch
+func (d *DB) getBatch(m map[int64]int64) (exit bool) {
+	var node Batch
+	select {
+	case node = <-d.ch:
+	case <-d.close:
+		exit = true
+		return
+	}
+
 	m[node.ID] = node.Val
 	for {
 		select {
 		case node = <-d.ch:
 			m[node.ID] = node.Val
+		case <-d.close:
+			exit = true
+			return
 		default:
 			return
 		}

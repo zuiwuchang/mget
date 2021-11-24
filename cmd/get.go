@@ -3,9 +3,11 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/zuiwuchang/mget/cmd/internal/get"
@@ -45,10 +47,12 @@ mget get -u http://127.0.0.1/tools/source.exe -o a.exe`,
 					return
 				}
 			}
+			last := time.Now()
 			e = get.NewManager(context.Background(), conf).Serve()
 			if e != nil {
 				log.Fatalln(e)
 			}
+			fmt.Println(`success:`, conf.Output, time.Since(last))
 		},
 	}
 	flags := cmd.Flags()

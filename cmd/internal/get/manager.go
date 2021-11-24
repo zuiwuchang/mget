@@ -3,7 +3,6 @@ package get
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -63,9 +62,13 @@ func (m *Manager) Serve() (e error) {
 	e = v.Init()
 	if e == nil {
 		defer v.Close()
+		m.m.Lock()
 		e = m.init()
 		if e == nil {
-			go m.postStatus(false)
+			m.postStatus(true)
+		}
+		m.m.Unlock()
+		if e == nil {
 			e = v.MainLoop()
 		}
 	}
@@ -89,35 +92,40 @@ func (m *Manager) init() (e error) {
 		defer m.wait.Done()
 		if e := m.produce(); e != nil {
 			m.ExitWithError(e)
+			return
 		}
 		close(m.finish)
 		m.waitWorker.Wait()
 		m.m.Lock()
-		defer m.m.Unlock()
 		if m.status == metadata.StatusDownload {
 			m.status = metadata.StatusMerge
+			log.Info(`Status: `, m.status)
 			m.postStatus(true)
+			m.m.Unlock()
+
+			e = db.DefaultDB().Finish()
+			if e != nil {
+				m.ExitWithError(e)
+				return
+			}
+			m.m.Lock()
+			if m.status == metadata.StatusMerge {
+				m.status = metadata.StatusSuccess
+				log.Info(`Status: `, m.status)
+				m.postStatus(true)
+			}
+			m.m.Unlock()
+			m.view.Update(func(g *gocui.Gui) error {
+				return gocui.ErrQuit
+			})
+		} else {
+			m.m.Unlock()
 		}
 	}()
 	return
 }
-func (m *Manager) names() string {
-	var strs []string
-	for skip := 1; ; skip++ {
-		pc, file, line, ok := runtime.Caller(skip)
-		if !ok {
-			break
-		}
-		strs = append(strs, fmt.Sprintf(`[%v %v %s]`, file, line,
-			runtime.FuncForPC(pc).Name(),
-		))
-	}
 
-	return strings.Join(strs, "\n")
-}
 func (m *Manager) postStatus(safe bool) {
-	// log.Info(`postStatus `, safe, "\n", m.names())
-	// defer log.Info(`postStatus exit`)
 	if m.view == nil {
 		return
 	}
@@ -252,7 +260,8 @@ func (m *Manager) produce() (e error) {
 }
 func (m *Manager) ExitWithError(e error) {
 	m.m.Lock()
-	if m.status < metadata.StatusError {
+	if m.status < metadata.StatusError ||
+		m.status == metadata.StatusMerge {
 		m.status = metadata.StatusError
 		m.view.Update(func(g *gocui.Gui) error {
 			return e
