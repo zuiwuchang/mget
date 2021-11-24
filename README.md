@@ -6,6 +6,7 @@ Originally I thought that http multi-threaded download was meaningless, because 
 * Abnormal or exit before the download is complete, you can resume the download from the downloaded location next time
 * You can dynamically increase or decrease worker threads when downloading
 * Although the description is multi-threaded, it is actually multiple goroutines
+* Download support http or socks5 proxy
 
 # How
 ```

@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -34,6 +35,32 @@ func init() {
 		Example: `mget get -u http://127.0.0.1/tools/source.exe
 mget get -u http://127.0.0.1/tools/source.exe -o a.exe`,
 		Run: func(cmd *cobra.Command, args []string) {
+			if proxy == `` {
+				env := []string{
+					`socket_proxy`,
+					`SOCKET_proxy`,
+					`http_proxy`,
+					`HTTP_PROXY`,
+				}
+				for _, k := range env {
+					v := os.Getenv(k)
+					if v == `` {
+						continue
+					}
+					k = strings.ToLower(k)
+					if strings.HasPrefix(k, `http`) {
+						if !strings.HasPrefix(v, `http://`) && !strings.HasPrefix(v, `https://`) {
+							continue
+						}
+					} else {
+						if !strings.HasPrefix(v, `socks5://`) {
+							continue
+						}
+					}
+					proxy = v
+					break
+				}
+			}
 			conf, e := metadata.NewConfigure(url, output, proxy,
 				agent, head, headers, cookies, insecure,
 				worker, blockStr,
@@ -125,9 +152,12 @@ mget get -u http://127.0.0.1/tools/source.exe -o a.exe`,
 		false,
 		`allow insecure server connections when using SSL`,
 	)
-	flags.BoolVarP(&insecure,
+	if runtime.GOOS == `windows` {
+		ascii = true
+	}
+	flags.BoolVarP(&ascii,
 		`ASCII`, `A`,
-		false,
+		ascii,
 		`if ASCII is true then use ASCII instead of unicode to draw the`,
 	)
 
