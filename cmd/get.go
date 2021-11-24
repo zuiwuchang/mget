@@ -47,6 +47,18 @@ mget get -u http://127.0.0.1/tools/source.exe -o a.exe`,
 					return
 				}
 			}
+			exists, e := conf.Exists()
+			if e != nil {
+				log.Fatalln(e)
+			}
+			if exists && !yes {
+				fmt.Println(`File already exists:`, conf.Output)
+				val := readBool(bufio.NewReader(os.Stdin), `Are you sure you want to overwrite the existing file <y/n>`)
+				if !val {
+					return
+				}
+			}
+
 			last := time.Now()
 			e = get.NewManager(context.Background(), conf).Serve()
 			if e != nil {

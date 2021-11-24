@@ -307,3 +307,18 @@ func (c *Configure) cookie() string {
 	c.m.Unlock()
 	return v
 }
+func (c *Configure) Exists() (exists bool, e error) {
+	info, e := os.Stat(c.Output)
+	if e != nil {
+		if os.IsNotExist(e) {
+			e = nil
+		}
+		return
+	}
+	exists = true
+	if info.IsDir() {
+		e = fmt.Errorf(`dir already exists: %s`, c.Output)
+		return
+	}
+	return
+}
